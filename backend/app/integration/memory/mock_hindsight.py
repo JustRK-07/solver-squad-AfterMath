@@ -16,19 +16,10 @@ from app.integration.memory.observation import (
     build_observation_view,
     compute_observation_meta,
 )
+from app.integration.memory.seed_mirror import to_record as _record
 from app.models import EvidenceItem, ObservationMeta, ObservationView
 
 _SEED_PATH = Path(__file__).resolve().parents[4] / "data" / "aftermath-seed.json"
-
-
-def _record(inc: dict) -> dict:
-    return {
-        "id": inc["id"],
-        "outcome": inc["outcome"],
-        "date": inc["date"],
-        "mttr_minutes": inc["mttr_minutes"],
-        "snippet": inc.get("lesson") or inc["fix"],
-    }
 
 
 class MockHindsightClient:

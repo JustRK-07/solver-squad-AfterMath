@@ -26,7 +26,7 @@ import os
 import re
 
 from app.integration.agent.base import AgentClient
-from app.models import IncidentInput, ReflectResult
+from app.models import IncidentInput, ReflectResult, RemediationStep
 
 _INC_RE = re.compile(r"INC-\d+")
 
@@ -90,18 +90,28 @@ def _parse_diagnosis(text: str) -> ReflectResult:
     data = json.loads(match.group(0)) if match else {}
 
     # §6: collect cited ids from steps + supporting list; keep only INC-shaped ids.
+    raw_steps = data.get("steps") or []
     cited: list[str] = list(data.get("supporting_incident_ids") or [])
-    for step in data.get("steps") or []:
+    for step in raw_steps:
         cited += step.get("source_incident_ids") or []
     supporting = sorted({i for i in cited if _INC_RE.fullmatch(i)})
 
-    fix = data.get("recommended_fix") or " ".join(
-        s.get("text", "") for s in data.get("steps") or []
-    )
+    steps = [
+        RemediationStep(
+            order=i + 1,
+            text=s.get("text", ""),
+            sources=[x for x in (s.get("source_incident_ids") or []) if _INC_RE.fullmatch(x)],
+        )
+        for i, s in enumerate(raw_steps)
+        if s.get("text")
+    ]
+
+    fix = data.get("recommended_fix") or " ".join(s.text for s in steps)
     return ReflectResult(
         root_cause=data.get("root_cause", "Unknown — agent returned no root cause."),
         recommended_fix=fix or "No fix proposed.",
         avoid=[a for a in (data.get("avoid") or []) if a],
         supporting_incident_ids=supporting,
         rationale=data.get("rationale", ""),
+        steps=steps,
     )

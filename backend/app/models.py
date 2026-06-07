@@ -58,6 +58,24 @@ class EvidenceItem(_Camel):
     outcome: Outcome
     freshness: Optional[Freshness] = None
     snippet: str
+    # ── enrichment for the console UI (Scenario.retrieved / top) ──
+    title: str = ""
+    service: str = ""
+    similarity: int = 0                   # 0–100 relevance %
+    mttr_minutes: int = 0
+    root_cause: str = ""
+    resolution: str = ""
+
+
+class RemediationStep(_Camel):
+    order: int
+    text: str
+    sources: list[str] = Field(default_factory=list)   # cited incident ids (§6)
+
+
+class MttrHistory(_Camel):
+    mttr: list[int] = Field(default_factory=list)       # chronological MTTR (minutes)
+    labels: list[str] = Field(default_factory=list)     # incident ids, same order
 
 
 class DiagnosisResult(_Camel):
@@ -71,6 +89,10 @@ class DiagnosisResult(_Camel):
     verified: bool
     evidence: list[EvidenceItem] = Field(default_factory=list)
     rationale: str
+    # ── enrichment for the console UI ──
+    steps: list[RemediationStep] = Field(default_factory=list)
+    mttr_minutes: int = 0                  # representative (median of matched incidents)
+    history: MttrHistory = Field(default_factory=MttrHistory)
 
 
 class ObservationView(_Camel):
@@ -107,6 +129,7 @@ class ReflectResult(BaseModel):
     avoid: list[str] = Field(default_factory=list)
     supporting_incident_ids: list[str] = Field(default_factory=list)
     rationale: str
+    steps: list[RemediationStep] = Field(default_factory=list)   # ordered, with sources (§6)
 
 
 class ObservationMeta(BaseModel):

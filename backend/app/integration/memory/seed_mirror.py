@@ -20,14 +20,22 @@ from pathlib import Path
 _SEED_PATH = Path(__file__).resolve().parents[4] / "data" / "aftermath-seed.json"
 
 
-def _record(inc: dict) -> dict:
+def to_record(inc: dict) -> dict:
+    """Normalize a seed incident into the rich record the UI needs."""
     return {
         "id": inc["id"],
+        "service": inc["service"],
+        "title": inc["symptom"].split(";")[0][:70],   # short human title
         "outcome": inc["outcome"],
         "date": inc["date"],
         "mttr_minutes": inc["mttr_minutes"],
+        "root_cause": inc["root_cause"],
+        "resolution": inc["fix"],
         "snippet": inc.get("lesson") or inc["fix"],
     }
+
+
+_record = to_record  # alias used within this module
 
 
 @lru_cache

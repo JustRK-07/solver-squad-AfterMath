@@ -70,6 +70,8 @@ def compute_observation_meta(pattern: str, records: list[dict]) -> ObservationMe
 
 
 def build_evidence(records: list[dict], freshness: Freshness) -> list[EvidenceItem]:
+    # Most recent first; similarity descends by position (top match = highest).
+    ordered = sorted(records, key=lambda r: _parse(r["date"]), reverse=True)
     return [
         EvidenceItem(
             incident_id=r["id"],
@@ -77,8 +79,14 @@ def build_evidence(records: list[dict], freshness: Freshness) -> list[EvidenceIt
             outcome=Outcome(r["outcome"]),
             freshness=freshness,
             snippet=r.get("snippet", ""),
+            title=r.get("title", ""),
+            service=r.get("service", ""),
+            similarity=max(60, 96 - i * 5),
+            mttr_minutes=int(r.get("mttr_minutes", 0) or 0),
+            root_cause=r.get("root_cause", ""),
+            resolution=r.get("resolution", ""),
         )
-        for r in sorted(records, key=lambda r: _parse(r["date"]), reverse=True)
+        for i, r in enumerate(ordered)
     ]
 
 

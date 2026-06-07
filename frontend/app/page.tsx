@@ -1,18 +1,27 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { SiteHeader } from "@/components/layout/SiteHeader";
 import { QuickActions } from "@/components/incident/QuickActions";
 import { IncidentForm } from "@/components/incident/IncidentForm";
 import { ImpactBar } from "@/components/incident/ImpactBar";
 import { IncidentHeader } from "@/components/incident/IncidentHeader";
+import { HypothesisStrip } from "@/components/incident/HypothesisStrip";
+import { ServiceHealth } from "@/components/incident/ServiceHealth";
 import { SignalsPanel } from "@/components/incident/SignalsPanel";
 import { DeploysPanel } from "@/components/incident/DeploysPanel";
 import { MetricsCard } from "@/components/incident/MetricsCard";
 import { AgentActivity } from "@/components/agent/AgentActivity";
+import { TopMatches } from "@/components/agent/TopMatches";
+import { DarcLoop, type DarcState } from "@/components/agent/DarcLoop";
 import { MemoryBank } from "@/components/memory/MemoryBank";
+import { MemoryPulse } from "@/components/memory/MemoryPulse";
+import { LearningCurve } from "@/components/memory/LearningCurve";
+import { WithVsWithoutMemory } from "@/components/memory/WithVsWithoutMemory";
+import { PatternCatalog } from "@/components/memory/PatternCatalog";
 import { RecommendationCard } from "@/components/recommendation/RecommendationCard";
+import { CounterfactualCallout } from "@/components/recommendation/CounterfactualCallout";
 import { WhyMatched } from "@/components/recommendation/WhyMatched";
 import { OutcomeForm } from "@/components/outcome/OutcomeForm";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -21,7 +30,7 @@ import { ToastProvider, useToast } from "@/components/shared/Toast";
 import { useDiagnosis } from "@/hooks/useDiagnosis";
 import { useDemo } from "@/hooks/useDemo";
 import { buildFlows } from "@/lib/flows";
-import { DEPLOYS, SIGNALS } from "@/lib/mockData";
+import { DEPLOYS, MTTR_BASELINE_MINS, SIGNALS } from "@/lib/mockData";
 import { downloadPlay, downloadSignals } from "@/lib/downloads";
 import { nowUTC } from "@/lib/utils";
 import type { OutcomeReport, Scenario, ScenarioKey } from "@/types/incident";
@@ -32,10 +41,12 @@ function AfterMathPage() {
   const { playDemo, demoInProgress, demoLabel } = useDemo(diag);
   const [bankOpen, setBankOpen] = useState(false);
   const [bankSelectedId, setBankSelectedId] = useState<string | null>(null);
+  const [outcomeRecorded, setOutcomeRecorded] = useState(false);
 
   const scenario: Scenario | null = diag.scenario;
   const scenarioKey: ScenarioKey | null = diag.scenarioKey;
   const hasResult = diag.status === "done" && scenario !== null;
+  const isRunning = diag.status === "running";
 
   // The flow array — empty when idle, populated after a diagnosis
   const flows = useMemo(() => {
@@ -52,13 +63,33 @@ function AfterMathPage() {
   const defaultFix = scenario?.steps?.[0]?.text ?? scenario?.recommendedFix ?? "";
   const defaultMttr = scenario?.mttr ?? 0;
 
+  // ── DARC loop state derivation ─────────────────────────────────────
+  const darcDiagnose: DarcState = hasResult
+    ? "done"
+    : isRunning
+      ? "active"
+      : "pending";
+  const darcAct: DarcState = outcomeRecorded
+    ? "done"
+    : hasResult
+      ? "active"
+      : "pending";
+  const darcRecord: DarcState = outcomeRecorded
+    ? "done"
+    : hasResult
+      ? "active"
+      : "pending";
+  const darcConsolidate: DarcState = outcomeRecorded ? "done" : "pending";
+
   // ── handlers ─────────────────────────────────────────────────────
   const onPick = (symptom: string, service: string) => {
+    setOutcomeRecorded(false);
     diag.setAll({ symptom, service, useMemory: true });
     void diag.diagnose({ symptom, service, useMemory: true });
   };
 
   const onSubmitForm = () => {
+    setOutcomeRecorded(false);
     void diag.diagnose();
   };
 
@@ -107,6 +138,7 @@ function AfterMathPage() {
     } catch {
       /* mock fallback */
     }
+    setOutcomeRecorded(true);
     toast.show(
       `✓ Outcome recorded (${outcome}, ${mttrMins}m). Next similar incident will recall this.`,
     );
@@ -139,10 +171,20 @@ function AfterMathPage() {
           onSubmit={onSubmitForm}
         />
 
+        {/* memory hero — always visible, even when idle: judges should
+            see the memory story before any diagnosis runs */}
+        <MemoryPulse />
+        <LearningCurve />
+
         {/* impact + incident header — visible once a diagnosis lands */}
         {hasResult && (
           <>
             <ImpactBar mttrMins={scenario!.mttr} />
+            <WithVsWithoutMemory
+              scenario={scenario}
+              useMemory={diag.useMemory}
+              baselineMttr={MTTR_BASELINE_MINS}
+            />
             <IncidentHeader
               service={diag.service}
               incidentId="INC-231"
@@ -156,6 +198,7 @@ function AfterMathPage() {
               onNotify={onNotify}
               onRecollect={onRecollect}
             />
+            <HypothesisStrip scenario={scenario!} />
           </>
         )}
 
@@ -170,6 +213,14 @@ function AfterMathPage() {
               mttrMins={scenario!.mttr}
             />
           </>
+        )}
+
+        {/* top matches — surfaced above the tabs where judges actually look */}
+        {hasResult && (
+          <TopMatches
+            hits={scenario!.retrieved}
+            onSelect={onSelectRecall}
+          />
         )}
 
         {/* agent + memory bank tabs */}
@@ -194,15 +245,24 @@ function AfterMathPage() {
           </Tabs>
         )}
 
-        {/* recommendation */}
+        {/* recommendation + the counterfactual that anchors the speedup */}
         {hasResult && (
-          <RecommendationCard scenario={scenario!} onDownload={onDownloadPlay} />
+          <>
+            <RecommendationCard scenario={scenario!} onDownload={onDownloadPlay} />
+            <CounterfactualCallout scenario={scenario!} />
+          </>
         )}
 
         {/* why matched */}
         {hasResult && scenario!.top && (
           <WhyMatched top={scenario!.top} history={scenario!.history} />
         )}
+
+        {/* system-wide memory — patterns + service health */}
+        <div className="grid md:grid-cols-2 gap-3.5">
+          <PatternCatalog />
+          <ServiceHealth />
+        </div>
 
         {/* outcome form — DARC loop closure */}
         {hasResult && (
@@ -212,6 +272,14 @@ function AfterMathPage() {
             onRecord={onRecord}
           />
         )}
+
+        {/* DARC loop — always visible, lights up as user advances */}
+        <DarcLoop
+          diagnose={darcDiagnose}
+          act={darcAct}
+          record={darcRecord}
+          consolidate={darcConsolidate}
+        />
       </main>
     </div>
   );
